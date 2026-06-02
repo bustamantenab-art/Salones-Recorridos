@@ -82,7 +82,13 @@
     $('#app').classList.remove('hidden');
     $('#menu-usuario-actual').textContent = usuario;
     await recargarLista();
-    mostrarVista('lista');
+    // Reset de pila y estado inicial de history
+    pilaVistas = ['lista'];
+    history.replaceState({ vista: 'lista' }, '');
+    mostrarVista('lista', { sinHistory: true });
+    // Escuchar el botón atrás del celular
+    window.removeEventListener('popstate', manejarBack);
+    window.addEventListener('popstate', manejarBack);
   }
 
   async function recargarLista() {
@@ -100,7 +106,11 @@
 
   function renderLista() {
     const lista = cache.filter(s => {
-      if (filtroCalif && String(s.calificacion) !== filtroCalif) return false;
+      if (filtroCalif === 'pendiente') {
+        if (s.calificacion !== 'pendiente') return false;
+      } else if (filtroCalif && String(s.calificacion) !== filtroCalif) {
+        return false;
+      }
       if (filtroTexto) {
         const t = filtroTexto.toLowerCase();
         const blob = [
@@ -133,16 +143,20 @@
 
     lista.forEach(s => {
       const card = document.createElement('div');
-      card.className = 'salon-card';
+      const esPendiente = s.calificacion === 'pendiente';
+      card.className = 'salon-card' + (esPendiente ? ' pendiente' : '');
       card.onclick = () => abrirDetalle(s.id);
       const thumb = cacheThumbs[s.id];
+      const indicador = esPendiente
+        ? `<span class="badge-pendiente">⏳ Pendiente</span>`
+        : `<span class="estrellas">${estrellas(s.calificacion)}</span>`;
       card.innerHTML = `
         <div class="salon-card-row">
           ${thumb ? `<img class="salon-card-thumb" src="${thumb}" alt="" />` : ''}
           <div class="salon-card-info">
             <h3>
               <span>${escapeHtml(s.nombre)}</span>
-              <span class="estrellas">${estrellas(s.calificacion)}</span>
+              ${indicador}
             </h3>
             <div class="meta">
               ${s.persona ? `<span>👤 ${escapeHtml(s.persona)}${s.rol ? ' · ' + escapeHtml(s.rol) : ''}</span>` : ''}
@@ -180,8 +194,10 @@
       fotoHtml = `<div class="detalle-foto" id="detalle-foto"><img src="${url}" alt="Foto del salón" data-foto-url="${url}" /></div>`;
     }
 
+    const esPendiente = s.calificacion === 'pendiente';
     body.innerHTML = `
       ${fotoHtml}
+      ${esPendiente ? '<div class="detalle-pendiente">⏳ PENDIENTE — Volver a pasar</div>' : ''}
       <div class="detalle-acciones-rapidas">
         <a class="accion-rapida ${waHref ? '' : 'disabled'}" ${waHref ? `href="${waHref}" target="_blank" rel="noopener"` : ''}>
           <span class="ico">💬</span>WhatsApp
@@ -194,10 +210,10 @@
         </a>
       </div>
 
-      <div class="detalle-campo">
+      ${esPendiente ? '' : `<div class="detalle-campo">
         <div class="label">Ganas de incorporar la marca</div>
         <div class="detalle-estrellas">${estrellas(s.calificacion)}</div>
-      </div>
+      </div>`}
 
       ${campoTexto('Persona que atendió', s.persona && `${s.persona}${s.rol ? ' (' + s.rol + ')' : ''}`)}
       ${campoTexto('Dirección', s.direccion)}
@@ -220,8 +236,10 @@
     const lb = document.createElement('div');
     lb.className = 'lightbox';
     lb.innerHTML = `<img src="${src}" alt="" />`;
-    lb.onclick = () => lb.remove();
+    // El click solo dispara back; manejarBack remueve el lb y devuelve el state.
+    lb.onclick = () => history.back();
     document.body.appendChild(lb);
+    history.pushState({ vista: 'lightbox' }, '');
   }
 
   function campoTexto(label, valor) {
@@ -296,8 +314,11 @@
 
   async function guardarFormulario(e) {
     e.preventDefault();
-    const calif = Number($('#f-calif').value);
-    if (!calif) { toast('Tocá las estrellas para calificar.'); return; }
+    const calif = $('#f-calif').value === 'pendiente' ? 'pendiente' : Number($('#f-calif').value);
+    if (!calif && calif !== 'pendiente') {
+      toast('Tocá las estrellas o marcá "Pendiente".');
+      return;
+    }
 
     const geo = $('#geo-info').dataset;
     const data = {
@@ -568,12 +589,18 @@
 
   // ---------- Rating ----------
   function setRating(v) {
-    $('#f-calif').value = v || '';
+    // v puede ser 0 (sin calificar), 1-5, o 'pendiente'
+    const esPendiente = v === 'pendiente';
+    $('#f-calif').value = esPendiente ? 'pendiente' : (v || '');
     $$('#rating button').forEach(b => {
-      b.classList.toggle('on', Number(b.dataset.v) <= v);
+      b.classList.toggle('on', !esPendiente && Number(b.dataset.v) <= v);
     });
-    const labels = ['Tocá las estrellas', '⭐ Nada', '⭐⭐ Poco interés', '⭐⭐⭐ Tibio', '⭐⭐⭐⭐ Interesado', '⭐⭐⭐⭐⭐ Muy interesado'];
-    $('#rating-label').textContent = labels[v] || labels[0];
+    $('#btn-pendiente').classList.toggle('activo', esPendiente);
+    const labels = ['Tocá las estrellas o marcá pendiente', '⭐ Nada', '⭐⭐ Poco interés', '⭐⭐⭐ Tibio', '⭐⭐⭐⭐ Interesado', '⭐⭐⭐⭐⭐ Muy interesado'];
+    $('#rating-label').textContent = esPendiente ? '⏳ Marcado como pendiente — volver a pasar' : (labels[v] || labels[0]);
+  }
+  function marcarPendiente() {
+    setRating('pendiente');
   }
 
   // ---------- Geolocalización ----------
@@ -611,6 +638,7 @@
 
   // ---------- Mapa ----------
   function colorCalif(c) {
+    if (c === 'pendiente') return '#8a92a0';
     return ({1:'#c0392b',2:'#e67e22',3:'#f0ad4e',4:'#73c285',5:'#1e8449'})[c] || '#888';
   }
 
@@ -654,9 +682,12 @@
       const m = L.marker([s.lat, s.lng], { icon: pinIcon(s.calificacion) });
       const wa = limpiarTel(s.whatsapp);
       const waLink = wa ? `<a class="mapa-popup-link" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : '';
+      const marca = s.calificacion === 'pendiente'
+        ? '<div class="mapa-popup-estrellas">⏳ Pendiente</div>'
+        : `<div class="mapa-popup-estrellas">${estrellas(s.calificacion)}</div>`;
       m.bindPopup(`
         <div class="mapa-popup-titulo">${escapeHtml(s.nombre)}</div>
-        <div class="mapa-popup-estrellas">${estrellas(s.calificacion)}</div>
+        ${marca}
         <div class="mapa-popup-meta">${s.persona ? escapeHtml(s.persona) : ''}${s.rol ? ' · ' + escapeHtml(s.rol) : ''}</div>
         ${s.direccion ? `<div class="mapa-popup-meta">${escapeHtml(s.direccion)}</div>` : ''}
         <a class="mapa-popup-link" href="#" data-salon-id="${s.id}">Ver detalle</a>
@@ -690,7 +721,7 @@
 
     const filas = cache.map(s => ({
       'Salón': s.nombre,
-      'Calificación': s.calificacion,
+      'Calificación': s.calificacion === 'pendiente' ? 'Pendiente' : s.calificacion,
       'Interés': nivelInteres(s.calificacion),
       'Persona': s.persona || '',
       'Rol': s.rol || '',
@@ -719,10 +750,11 @@
 
     // Hojas filtradas por interés
     const grupos = [
+      ['Pendientes',            f => f.Calificación === 'Pendiente'],
       ['Muy interesados (5⭐)', f => f.Calificación === 5],
       ['Interesados (4⭐)',     f => f.Calificación === 4],
       ['Tibios (3⭐)',          f => f.Calificación === 3],
-      ['Sin interés (1-2⭐)',   f => f.Calificación <= 2]
+      ['Sin interés (1-2⭐)',   f => typeof f.Calificación === 'number' && f.Calificación <= 2]
     ];
     grupos.forEach(([nombre, fn]) => {
       const sub = filas.filter(fn);
@@ -739,6 +771,11 @@
       'Interés': nivelInteres(n),
       'Cantidad': cache.filter(s => s.calificacion === n).length
     }));
+    resumen.push({
+      'Calificación': '⏳',
+      'Interés': 'Pendiente',
+      'Cantidad': cache.filter(s => s.calificacion === 'pendiente').length
+    });
     resumen.push({ 'Calificación': 'TOTAL', 'Interés': '', 'Cantidad': cache.length });
     const wsr = XLSX.utils.json_to_sheet(resumen);
     wsr['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 10 }];
@@ -750,6 +787,7 @@
   }
 
   function nivelInteres(c) {
+    if (c === 'pendiente') return 'Pendiente (volver a pasar)';
     return ({5:'Muy interesado',4:'Interesado',3:'Tibio',2:'Poco interés',1:'Nada'})[c] || '—';
   }
 
@@ -769,21 +807,31 @@
         <scale>1.1</scale>
         <Icon><href>https://maps.google.com/mapfiles/kml/paddle/${n}.png</href></Icon>
       </IconStyle>
-    </Style>`).join('');
+    </Style>`).join('') + `
+    <Style id="calpendiente">
+      <IconStyle>
+        <color>ffa0a0a0</color>
+        <scale>1.1</scale>
+        <Icon><href>https://maps.google.com/mapfiles/kml/paddle/wht-blank.png</href></Icon>
+      </IconStyle>
+    </Style>`;
 
     const placemarks = conCoords.map(s => {
+      const esPend = s.calificacion === 'pendiente';
       const desc = [
         s.persona ? `Atendió: ${s.persona}${s.rol ? ' (' + s.rol + ')' : ''}` : '',
-        `Calificación: ${s.calificacion}/5 — ${nivelInteres(s.calificacion)}`,
+        esPend ? 'Estado: ⏳ Pendiente (volver a pasar)'
+               : `Calificación: ${s.calificacion}/5 — ${nivelInteres(s.calificacion)}`,
         s.whatsapp ? `WhatsApp: ${s.whatsapp}` : '',
         s.email ? `Email: ${s.email}` : '',
         s.direccion ? `Dirección: ${s.direccion}` : '',
         s.observaciones ? `Observaciones: ${s.observaciones}` : '',
         `Cargado por: ${s.cargadoPor || '—'} el ${new Date(s.creadoEn).toLocaleDateString('es-AR')}`
       ].filter(Boolean).join('\n');
+      const sufijo = esPend ? '(⏳ Pendiente)' : `(${s.calificacion}⭐)`;
       return `
     <Placemark>
-      <name>${escapeXml(s.nombre)} (${s.calificacion}⭐)</name>
+      <name>${escapeXml(s.nombre)} ${sufijo}</name>
       <description><![CDATA[${escapeHtml(desc).replace(/\n/g, '<br>')}]]></description>
       <styleUrl>#cal${s.calificacion}</styleUrl>
       <Point><coordinates>${s.lng},${s.lat},0</coordinates></Point>
@@ -855,13 +903,54 @@
   }
 
   // ---------- Vistas / navegación ----------
-  function mostrarVista(nombre) {
+  // Pila lógica de vistas para manejar el botón "atrás" del celular.
+  let pilaVistas = ['lista'];
+  let navegacionInterna = false; // flag para no re-pushear al hacer popstate
+
+  function mostrarVista(nombre, opciones = {}) {
     $('#menu').classList.add('hidden');
     ['lista', 'mapa', 'detalle', 'form', 'acerca'].forEach(v => {
       $(`#vista-${v}`).classList.toggle('hidden', v !== nombre);
     });
     window.scrollTo(0, 0);
     if (nombre === 'mapa') renderMapa();
+
+    // Sincronizar con history (para que botón atrás vuelva en vez de cerrar)
+    if (!opciones.sinHistory) {
+      const ultima = pilaVistas[pilaVistas.length - 1];
+      if (ultima !== nombre) {
+        pilaVistas.push(nombre);
+        history.pushState({ vista: nombre, profundidad: pilaVistas.length }, '');
+      }
+    }
+  }
+
+  function manejarBack() {
+    // Si hay lightbox abierto -> cerrarlo primero
+    const lb = document.querySelector('.lightbox');
+    if (lb) { lb.remove(); history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, ''); return; }
+    // Si hay menú abierto -> cerrarlo
+    if (!$('#menu').classList.contains('hidden')) {
+      $('#menu').classList.add('hidden');
+      history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, '');
+      return;
+    }
+    // Sugerencias de dirección abiertas -> cerrarlas
+    if (!$('#dir-sugerencias').classList.contains('hidden')) {
+      cerrarSugerencias();
+      history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, '');
+      return;
+    }
+    // Si estamos en una vista que no es lista -> volver a lista
+    if (pilaVistas.length > 1) {
+      pilaVistas.pop();
+      const anterior = pilaVistas[pilaVistas.length - 1] || 'lista';
+      mostrarVista(anterior, { sinHistory: true });
+    } else {
+      // Estamos en lista — dejar que el celular minimize la PWA (el browser
+      // gestionará el back nativamente, agregando un dummy state).
+      history.pushState({ vista: 'lista' }, '');
+    }
   }
 
   // ---------- Menú ----------
@@ -909,7 +998,7 @@
     $('#btn-editar').onclick = () => abrirForm(detalleId);
     $('#btn-eliminar').onclick = eliminarActual;
 
-    $$('[data-back]').forEach(b => b.onclick = () => mostrarVista('lista'));
+    $$('[data-back]').forEach(b => b.onclick = () => history.back());
 
     $('#input-buscar').oninput = (e) => { filtroTexto = e.target.value; renderLista(); };
     $('#filtro-calif').onchange = (e) => { filtroCalif = e.target.value; renderLista(); };
@@ -917,6 +1006,7 @@
     $$('#rating button').forEach(b => {
       b.onclick = () => setRating(Number(b.dataset.v));
     });
+    $('#btn-pendiente').onclick = marcarPendiente;
 
     $('#btn-geo').onclick = capturarGeo;
     $('#btn-buscar-gmaps').onclick = buscarEnGoogleMaps;
@@ -956,6 +1046,7 @@
     }[c]));
   }
   function estrellas(n) {
+    if (n === 'pendiente') return '';
     n = Number(n) || 0;
     return '★'.repeat(n) + '☆'.repeat(5 - n);
   }

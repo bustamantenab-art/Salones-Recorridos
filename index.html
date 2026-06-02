@@ -64,6 +64,7 @@
         <input type="search" id="input-buscar" placeholder="🔍 Buscar salón, persona, barrio..." />
         <select id="filtro-calif">
           <option value="">Todas</option>
+          <option value="pendiente">⏳ Pendientes (volver a pasar)</option>
           <option value="5">⭐⭐⭐⭐⭐ Muy interesado</option>
           <option value="4">⭐⭐⭐⭐ Interesado</option>
           <option value="3">⭐⭐⭐ Tibio</option>
@@ -81,7 +82,10 @@
         <p class="muted">Tocá el botón <b>+</b> abajo a la derecha.</p>
       </div>
 
-      <button id="fab-nuevo" class="fab" aria-label="Nuevo salón">+</button>
+      <button id="fab-nuevo" class="fab fab-extendido" aria-label="Nuevo salón">
+        <span class="fab-mas">+</span>
+        <span class="fab-texto">NUEVO SALÓN</span>
+      </button>
     </section>
 
     <!-- ============ Vista mapa ============ -->
@@ -93,6 +97,7 @@
         <span><i style="background:#f0ad4e"></i>3⭐</span>
         <span><i style="background:#e67e22"></i>2⭐</span>
         <span><i style="background:#c0392b"></i>1⭐</span>
+        <span><i style="background:#8a92a0"></i>⏳</span>
       </div>
       <div id="mapa-sin-coords" class="vacio hidden">
         <p>Ningún salón cargado tiene coordenadas GPS.</p>
@@ -213,8 +218,12 @@
             <button type="button" data-v="4">⭐</button>
             <button type="button" data-v="5">⭐</button>
           </div>
-          <input type="hidden" id="f-calif" required />
+          <input type="hidden" id="f-calif" />
           <small id="rating-label" class="muted">Tocá las estrellas</small>
+          <button type="button" id="btn-pendiente" class="btn btn-pendiente btn-block-sm">
+            ⏳ Marcar como pendiente (volver a pasar)
+          </button>
+          <small class="muted">Usalo si no te pudieron atender o no diste con la persona indicada.</small>
         </label>
 
         <label>

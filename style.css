@@ -290,23 +290,40 @@ body.dark .leaflet-container { background: #303841; }
 /* ============ FAB ============ */
 .fab {
   position: fixed;
-  bottom: calc(1.75rem + env(safe-area-inset-bottom));
+  bottom: calc(1.5rem + env(safe-area-inset-bottom));
   right: 1.25rem;
-  width: 72px; height: 72px;
-  border-radius: 50%;
   background: var(--kleno);
   color: #1a1d23;
-  font-size: 2.4rem;
-  font-weight: 700;
+  font-weight: 800;
   border: none;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0,0,0,.4), 0 0 0 4px rgba(255,193,7,.25);
   z-index: 15;
   line-height: 1;
 }
-.fab:active { transform: scale(.92); }
+.fab:active { transform: scale(.96); }
+
+/* FAB extendido tipo "pill": + grande con texto al lado */
+.fab-extendido {
+  display: flex; align-items: center; gap: .5rem;
+  padding: 1rem 1.4rem 1rem 1.1rem;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+}
+.fab-mas {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: #1a1d23;
+  color: var(--kleno);
+  border-radius: 50%;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+.fab-texto { padding-right: .25rem; }
+
 /* Más espacio abajo en lista para que el FAB no tape el último item */
-.vista { padding: 1rem 1rem 7.5rem; }
+.vista { padding: 1rem 1rem 8.5rem; }
 
 /* ============ Detalle ============ */
 .detalle-header {
@@ -557,6 +574,46 @@ body.dark .fieldset legend { color: var(--kleno); }
 }
 .rating button:active { transform: scale(1.2); }
 #rating-label { margin-top: .3rem; }
+
+/* ============ Botón pendiente ============ */
+.btn-pendiente {
+  margin-top: .75rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+.btn-pendiente.activo {
+  background: rgba(255,193,7,.18);
+  border-color: var(--kleno);
+  color: var(--kleno-dark);
+}
+body.dark .btn-pendiente.activo { color: var(--kleno); }
+
+/* Badge pendiente en lista/detalle */
+.badge-pendiente {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: rgba(138,146,160,.2);
+  color: var(--text);
+  border: 1px solid rgba(138,146,160,.4);
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.salon-card.pendiente { border-left-color: #8a92a0; }
+.detalle-pendiente {
+  background: rgba(255,193,7,.12);
+  border: 1px solid rgba(255,193,7,.35);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin-bottom: .8rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--kleno-dark);
+}
+body.dark .detalle-pendiente { color: var(--kleno); }
 
 /* ============ Botones ============ */
 .btn {
