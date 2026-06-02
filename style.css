@@ -42,10 +42,11 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-  font-size: 16px;
+  font-size: 17px;
   -webkit-tap-highlight-color: transparent;
   min-height: 100vh;
   overscroll-behavior-y: contain;
+  -webkit-text-size-adjust: 100%;
 }
 
 .hidden { display: none !important; }
@@ -130,8 +131,8 @@ html, body {
   background: transparent;
   border: none;
   color: inherit;
-  font-size: 1.6rem;
-  width: 40px; height: 40px;
+  font-size: 1.7rem;
+  width: 48px; height: 48px;
   border-radius: 50%;
   cursor: pointer;
 }
@@ -151,12 +152,13 @@ html, body {
 .menu button {
   display: block; width: 100%;
   text-align: left;
-  padding: .85rem 1rem;
+  padding: 1rem 1.1rem;
   background: transparent;
   border: none;
   color: var(--text);
-  font-size: .95rem;
+  font-size: 1rem;
   cursor: pointer;
+  min-height: 48px;
 }
 .menu button:hover { background: var(--surface-2); }
 .menu-sep { height: 1px; background: var(--border); margin: .25rem 0; }
@@ -217,7 +219,7 @@ body.dark .leaflet-tile { filter: brightness(.7) invert(1) contrast(.95) hue-rot
 body.dark .leaflet-container { background: #303841; }
 
 /* ============ Vista ============ */
-.vista { padding: 1rem 1rem 6rem; }
+/* (regla movida arriba para mayor padding-bottom por el FAB) */
 
 /* ============ Buscador ============ */
 .buscador {
@@ -261,12 +263,14 @@ body.dark .leaflet-container { background: #303841; }
 }
 .salon-card:active { transform: scale(.98); }
 .salon-card h3 {
-  margin: 0 0 .25rem;
-  font-size: 1rem;
+  margin: 0 0 .3rem;
+  font-size: 1.1rem;
   font-weight: 700;
   display: flex; justify-content: space-between; align-items: center;
   gap: .5rem;
 }
+.salon-card .meta { font-size: .9rem; }
+.salon-card { padding: 1rem 1rem; }
 .salon-card .estrellas { color: var(--kleno); font-size: .9rem; letter-spacing: 1px; white-space: nowrap; }
 .salon-card .meta {
   font-size: .82rem;
@@ -286,21 +290,23 @@ body.dark .leaflet-container { background: #303841; }
 /* ============ FAB ============ */
 .fab {
   position: fixed;
-  bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  bottom: calc(1.75rem + env(safe-area-inset-bottom));
   right: 1.25rem;
-  width: 60px; height: 60px;
+  width: 72px; height: 72px;
   border-radius: 50%;
   background: var(--kleno);
   color: #1a1d23;
-  font-size: 2rem;
+  font-size: 2.4rem;
   font-weight: 700;
   border: none;
   cursor: pointer;
-  box-shadow: 0 6px 20px rgba(0,0,0,.3);
+  box-shadow: 0 6px 20px rgba(0,0,0,.4), 0 0 0 4px rgba(255,193,7,.25);
   z-index: 15;
   line-height: 1;
 }
 .fab:active { transform: scale(.92); }
+/* Más espacio abajo en lista para que el FAB no tape el último item */
+.vista { padding: 1rem 1rem 7.5rem; }
 
 /* ============ Detalle ============ */
 .detalle-header {
@@ -420,7 +426,115 @@ body.dark .fieldset legend { color: var(--kleno); }
   background: var(--surface);
 }
 .row-2 label { flex-direction: row; align-items: center; gap: .6rem; }
-.geo-info { font-size: .8rem; }
+.geo-info { font-size: .9rem; margin-top: .5rem; }
+.geo-info.con-dato {
+  background: rgba(255,193,7,.15);
+  border-left: 3px solid var(--kleno);
+  padding: .5rem .7rem;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ============ Autocomplete dirección ============ */
+.autocomplete-wrap { position: relative; }
+.dir-sugerencias {
+  position: absolute;
+  top: 100%; left: 0; right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18);
+}
+.dir-sugerencia {
+  padding: .8rem .9rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  font-size: .92rem;
+  line-height: 1.3;
+}
+.dir-sugerencia:last-child { border-bottom: none; }
+.dir-sugerencia:hover, .dir-sugerencia.activa {
+  background: rgba(255,193,7,.15);
+}
+.dir-sugerencia .calle { font-weight: 600; color: var(--text); }
+.dir-sugerencia .resto { font-size: .8rem; color: var(--text-muted); margin-top: .15rem; }
+.dir-sugerencias-info {
+  padding: .7rem .9rem;
+  font-size: .85rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.dir-acciones {
+  display: flex; flex-direction: column; gap: .4rem;
+  margin-top: .5rem;
+}
+
+/* ============ Foto ============ */
+.foto-acciones {
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.foto-preview-wrap {
+  position: relative;
+  margin-bottom: .6rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+  display: flex; flex-direction: column;
+  align-items: center;
+  padding: .5rem;
+}
+.foto-preview-wrap img {
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+.foto-preview-wrap .btn { margin-top: .5rem; }
+
+/* Foto en el detalle */
+.detalle-foto {
+  width: 100%;
+  margin-bottom: .8rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+  cursor: zoom-in;
+}
+.detalle-foto img {
+  width: 100%;
+  display: block;
+  max-height: 320px;
+  object-fit: cover;
+}
+
+/* Foto fullscreen al tocar en detalle */
+.lightbox {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.95);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+  cursor: zoom-out;
+}
+.lightbox img { max-width: 96vw; max-height: 96vh; object-fit: contain; }
+
+/* Thumbnail en la card de la lista */
+.salon-card-thumb {
+  width: 56px; height: 56px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+.salon-card-row {
+  display: flex; gap: .75rem; align-items: flex-start;
+}
+.salon-card-info { flex: 1; min-width: 0; }
 
 /* ============ Rating ============ */
 .rating {
@@ -446,18 +560,20 @@ body.dark .fieldset legend { color: var(--kleno); }
 
 /* ============ Botones ============ */
 .btn {
-  padding: .8rem 1.1rem;
+  padding: .95rem 1.2rem;
   border-radius: var(--radius-sm);
-  font-size: 1rem;
+  font-size: 1.02rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
   text-decoration: none;
   display: inline-flex; align-items: center; justify-content: center;
   gap: .4rem;
+  min-height: 48px;
 }
-.btn-sm { padding: .45rem .8rem; font-size: .85rem; }
+.btn-sm { padding: .5rem .9rem; font-size: .9rem; min-height: 0; }
 .btn-block { width: 100%; }
+.btn-block-sm { width: 100%; }
 .btn-primary {
   background: var(--kleno);
   color: #1a1d23;

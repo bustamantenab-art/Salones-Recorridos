@@ -128,18 +128,51 @@
           <input type="text" id="f-nombre" required autocomplete="off" />
         </label>
 
-        <label>
-          <span>Dirección / Barrio</span>
-          <input type="text" id="f-direccion" autocomplete="off" />
-        </label>
+        <!-- ===== Bloque dirección + ubicación ===== -->
+        <fieldset class="fieldset">
+          <legend>📍 Dirección y ubicación</legend>
 
-        <div class="row-2">
-          <label>
-            <span>Ubicación GPS</span>
-            <button type="button" id="btn-geo" class="btn btn-outline btn-sm">📍 Capturar</button>
+          <label class="autocomplete-wrap">
+            <span>Dirección (escribí la calle y elegí de la lista)</span>
+            <input type="text" id="f-direccion" autocomplete="off"
+                   placeholder="Ej: Cabildo 2500" />
+            <div id="dir-sugerencias" class="dir-sugerencias hidden"></div>
+            <small class="muted">Provincia: Buenos Aires / CABA</small>
           </label>
+
+          <div class="dir-acciones">
+            <button type="button" id="btn-geo" class="btn btn-outline btn-block-sm">
+              📍 Usar mi ubicación actual (GPS)
+            </button>
+            <button type="button" id="btn-buscar-gmaps" class="btn btn-outline btn-block-sm">
+              🔍 Buscar este salón en Google Maps
+            </button>
+            <button type="button" id="btn-pegar-gmaps" class="btn btn-outline btn-block-sm">
+              📋 Pegar link de Google Maps
+            </button>
+          </div>
+
           <div id="geo-info" class="geo-info muted"></div>
-        </div>
+        </fieldset>
+
+        <!-- ===== Foto del salón ===== -->
+        <fieldset class="fieldset">
+          <legend>📷 Foto del salón</legend>
+          <div id="foto-preview-wrap" class="foto-preview-wrap hidden">
+            <img id="foto-preview" alt="Foto del salón" />
+            <button type="button" id="btn-quitar-foto" class="btn btn-danger btn-sm">Quitar foto</button>
+          </div>
+          <div class="foto-acciones">
+            <button type="button" id="btn-foto-camara" class="btn btn-outline btn-block-sm">
+              📸 Sacar foto
+            </button>
+            <button type="button" id="btn-foto-galeria" class="btn btn-outline btn-block-sm">
+              🖼️ Elegir de galería
+            </button>
+          </div>
+          <input type="file" id="input-foto-camara"  accept="image/*" capture="environment" hidden />
+          <input type="file" id="input-foto-galeria" accept="image/*" hidden />
+        </fieldset>
 
         <label>
           <span>WhatsApp</span>

@@ -2,7 +2,7 @@
    sw.js — Service Worker para funcionamiento offline
    Estrategia: cache-first para los archivos de la app.
    ============================================================ */
-const CACHE = 'kleno-salones-v2';
+const CACHE = 'kleno-salones-v3';
 const ARCHIVOS = [
   './',
   './index.html',
@@ -35,6 +35,14 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  // No cachear llamadas a Nominatim (búsquedas vivas) ni a tiles del mapa
+  // (sería un cache enorme y dinámico).
+  if (url.hostname.includes('nominatim.openstreetmap.org') ||
+      url.hostname.includes('tile.openstreetmap.org')) {
+    e.respondWith(fetch(req).catch(() => new Response('', { status: 504 })));
+    return;
+  }
   e.respondWith(
     caches.match(req).then(cached => {
       if (cached) return cached;

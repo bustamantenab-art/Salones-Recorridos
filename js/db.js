@@ -8,7 +8,7 @@
    ============================================================ */
 (function () {
   const DB_NAME = 'kleno-salones';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
 
   let dbPromise = null;
 
@@ -25,6 +25,10 @@
         }
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+        // v2: nuevo store para fotos (Blob aparte para no inflar registros)
+        if (!db.objectStoreNames.contains('fotos')) {
+          db.createObjectStore('fotos', { keyPath: 'salonId' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -70,7 +74,28 @@
 
   async function eliminarSalon(id) {
     const store = await tx('salones', 'readwrite');
+    const fotosStore = await tx('fotos', 'readwrite');
+    await reqToPromise(fotosStore.delete(Number(id)));
     return reqToPromise(store.delete(Number(id)));
+  }
+
+  // ---------- Fotos ----------
+  async function guardarFoto(salonId, blob) {
+    const store = await tx('fotos', 'readwrite');
+    return reqToPromise(store.put({ salonId: Number(salonId), blob, ts: Date.now() }));
+  }
+  async function obtenerFoto(salonId) {
+    const store = await tx('fotos', 'readonly');
+    const r = await reqToPromise(store.get(Number(salonId)));
+    return r ? r.blob : null;
+  }
+  async function eliminarFoto(salonId) {
+    const store = await tx('fotos', 'readwrite');
+    return reqToPromise(store.delete(Number(salonId)));
+  }
+  async function listarFotos() {
+    const store = await tx('fotos', 'readonly');
+    return reqToPromise(store.getAll());
   }
 
   // ---------- Meta (usuario actual, lista de usuarios) ----------
@@ -99,13 +124,39 @@
   async function exportarTodo() {
     const salones = await listarSalones();
     const usuarios = await getUsuariosRecientes();
+    const fotos = await listarFotos();
+    // Convertir blobs a base64 para que viajen en el JSON
+    const fotosB64 = await Promise.all(fotos.map(async f => ({
+      salonId: f.salonId,
+      ts: f.ts,
+      dataUrl: await blobToDataURL(f.blob)
+    })));
     return {
       app: 'kleno-salones-recorridos',
-      version: 1,
+      version: 2,
       exportadoEn: new Date().toISOString(),
       salones,
-      usuarios
+      usuarios,
+      fotos: fotosB64
     };
+  }
+
+  function blobToDataURL(blob) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(r.error);
+      r.readAsDataURL(blob);
+    });
+  }
+  function dataURLtoBlob(dataUrl) {
+    const [meta, b64] = dataUrl.split(',');
+    const mime = meta.match(/data:(.*?);base64/)[1];
+    const bin = atob(b64);
+    const len = bin.length;
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
   }
 
   async function importarTodo(json, modo = 'merge') {
@@ -113,19 +164,41 @@
       throw new Error('El archivo no es un backup válido de Salones Recorridos.');
     }
     const store = await tx('salones', 'readwrite');
+    const fotosStore = await tx('fotos', 'readwrite');
     if (modo === 'replace') {
       await reqToPromise(store.clear());
+      await reqToPromise(fotosStore.clear());
     }
     const existentes = modo === 'merge'
       ? new Set((await reqToPromise(store.getAll())).map(s => `${s.nombre}|${s.creadoEn}`))
       : new Set();
+
+    // Mapear viejo id (del backup) -> nuevo id (recién creado), para reasignar fotos
+    const mapaIds = {};
     for (const s of json.salones) {
       const key = `${s.nombre}|${s.creadoEn}`;
       if (modo === 'merge' && existentes.has(key)) continue;
       const copia = { ...s };
+      const viejoId = copia.id;
       delete copia.id;
-      await reqToPromise(store.add(copia));
+      const nuevoId = await reqToPromise(store.add(copia));
+      if (viejoId != null) mapaIds[viejoId] = nuevoId;
     }
+
+    // Restaurar fotos (si vienen en el backup)
+    if (Array.isArray(json.fotos)) {
+      for (const f of json.fotos) {
+        const nuevoId = mapaIds[f.salonId];
+        if (nuevoId == null) continue;
+        try {
+          const blob = dataURLtoBlob(f.dataUrl);
+          await reqToPromise(fotosStore.put({ salonId: Number(nuevoId), blob, ts: f.ts || Date.now() }));
+        } catch (e) {
+          console.warn('Foto no se pudo restaurar para salón', nuevoId, e);
+        }
+      }
+    }
+
     if (Array.isArray(json.usuarios) && json.usuarios.length) {
       const actuales = await getUsuariosRecientes();
       const merged = Array.from(new Set([...actuales, ...json.usuarios])).slice(0, 8);
@@ -137,6 +210,7 @@
   // Exponer
   window.KlenoDB = {
     listarSalones, obtenerSalon, guardarSalon, eliminarSalon,
+    guardarFoto, obtenerFoto, eliminarFoto,
     getUsuarioActual, setUsuarioActual, getUsuariosRecientes,
     exportarTodo, importarTodo
   };

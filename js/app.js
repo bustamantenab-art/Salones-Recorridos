@@ -13,6 +13,10 @@
   let filtroCalif = '';
   let mapa = null;              // instancia Leaflet
   let mapaCapaPines = null;
+  let fotoActualBlob = null;    // blob de la foto del salón en edición
+  let fotoMarcadaParaQuitar = false;
+  let cacheThumbs = {};         // salonId -> object URL del thumb
+  let dirTimer = null;          // debounce autocomplete
 
   // ---------- Inicio ----------
   document.addEventListener('DOMContentLoaded', init);
@@ -82,7 +86,15 @@
   }
 
   async function recargarLista() {
+    // liberar object URLs viejos
+    Object.values(cacheThumbs).forEach(URL.revokeObjectURL);
+    cacheThumbs = {};
     cache = await KlenoDB.listarSalones();
+    // precargar thumbs de fotos
+    for (const s of cache) {
+      const blob = await KlenoDB.obtenerFoto(s.id);
+      if (blob) cacheThumbs[s.id] = URL.createObjectURL(blob);
+    }
     renderLista();
   }
 
@@ -123,16 +135,22 @@
       const card = document.createElement('div');
       card.className = 'salon-card';
       card.onclick = () => abrirDetalle(s.id);
+      const thumb = cacheThumbs[s.id];
       card.innerHTML = `
-        <h3>
-          <span>${escapeHtml(s.nombre)}</span>
-          <span class="estrellas">${estrellas(s.calificacion)}</span>
-        </h3>
-        <div class="meta">
-          ${s.persona ? `<span>👤 ${escapeHtml(s.persona)}${s.rol ? ' · ' + escapeHtml(s.rol) : ''}</span>` : ''}
-          ${s.direccion ? `<span>📍 ${escapeHtml(s.direccion)}</span>` : ''}
+        <div class="salon-card-row">
+          ${thumb ? `<img class="salon-card-thumb" src="${thumb}" alt="" />` : ''}
+          <div class="salon-card-info">
+            <h3>
+              <span>${escapeHtml(s.nombre)}</span>
+              <span class="estrellas">${estrellas(s.calificacion)}</span>
+            </h3>
+            <div class="meta">
+              ${s.persona ? `<span>👤 ${escapeHtml(s.persona)}${s.rol ? ' · ' + escapeHtml(s.rol) : ''}</span>` : ''}
+              ${s.direccion ? `<span>📍 ${escapeHtml(s.direccion)}</span>` : ''}
+            </div>
+            <div class="fecha">${formatearFecha(s.creadoEn)} · por ${escapeHtml(s.cargadoPor || '—')}</div>
+          </div>
         </div>
-        <div class="fecha">${formatearFecha(s.creadoEn)} · por ${escapeHtml(s.cargadoPor || '—')}</div>
       `;
       cont.appendChild(card);
     });
@@ -154,7 +172,16 @@
       : (s.direccion ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.direccion)}` : null);
     const waHref = wa ? `https://wa.me/${wa}` : null;
 
+    // Foto
+    let fotoHtml = '';
+    const blob = await KlenoDB.obtenerFoto(s.id);
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      fotoHtml = `<div class="detalle-foto" id="detalle-foto"><img src="${url}" alt="Foto del salón" data-foto-url="${url}" /></div>`;
+    }
+
     body.innerHTML = `
+      ${fotoHtml}
       <div class="detalle-acciones-rapidas">
         <a class="accion-rapida ${waHref ? '' : 'disabled'}" ${waHref ? `href="${waHref}" target="_blank" rel="noopener"` : ''}>
           <span class="ico">💬</span>WhatsApp
@@ -173,7 +200,7 @@
       </div>
 
       ${campoTexto('Persona que atendió', s.persona && `${s.persona}${s.rol ? ' (' + s.rol + ')' : ''}`)}
-      ${campoTexto('Dirección / Barrio', s.direccion)}
+      ${campoTexto('Dirección', s.direccion)}
       ${campoLink('WhatsApp', s.whatsapp, waHref)}
       ${campoLink('Email', s.email, mailHref)}
       ${campoTexto('Ubicación GPS', (s.lat != null && s.lng != null) ? `${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}` : null)}
@@ -182,7 +209,19 @@
       ${campoTexto('Fecha de visita', formatearFecha(s.creadoEn))}
     `;
 
+    // Click en foto -> lightbox
+    const fotoEl = $('#detalle-foto');
+    if (fotoEl) fotoEl.onclick = () => abrirLightbox(fotoEl.querySelector('img').src);
+
     mostrarVista('detalle');
+  }
+
+  function abrirLightbox(src) {
+    const lb = document.createElement('div');
+    lb.className = 'lightbox';
+    lb.innerHTML = `<img src="${src}" alt="" />`;
+    lb.onclick = () => lb.remove();
+    document.body.appendChild(lb);
   }
 
   function campoTexto(label, valor) {
@@ -206,7 +245,11 @@
     const form = $('#form-salon');
     form.reset();
     setRating(0);
-    $('#geo-info').textContent = '';
+    actualizarGeoInfo(null, null);
+    cerrarSugerencias();
+    fotoActualBlob = null;
+    fotoMarcadaParaQuitar = false;
+    mostrarFotoPreview(null);
 
     if (id) {
       const s = await KlenoDB.obtenerSalon(id);
@@ -221,23 +264,34 @@
       $('#f-rol').value = s.rol || '';
       $('#f-obs').value = s.observaciones || '';
       setRating(s.calificacion || 0);
-      if (s.lat != null && s.lng != null) {
-        $('#geo-info').textContent = `📍 ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`;
-        $('#geo-info').dataset.lat = s.lat;
-        $('#geo-info').dataset.lng = s.lng;
-      } else {
-        delete $('#geo-info').dataset.lat;
-        delete $('#geo-info').dataset.lng;
+      actualizarGeoInfo(s.lat, s.lng);
+      // Cargar foto si existe
+      const blob = await KlenoDB.obtenerFoto(s.id);
+      if (blob) {
+        mostrarFotoPreview(blob);
       }
     } else {
       $('#form-titulo').textContent = 'Nuevo salón';
       $('#f-id').value = '';
-      delete $('#geo-info').dataset.lat;
-      delete $('#geo-info').dataset.lng;
     }
 
     mostrarVista('form');
     setTimeout(() => $('#f-nombre').focus(), 50);
+  }
+
+  function actualizarGeoInfo(lat, lng) {
+    const el = $('#geo-info');
+    if (lat != null && lng != null) {
+      el.textContent = `📍 Ubicación cargada: ${(+lat).toFixed(5)}, ${(+lng).toFixed(5)}`;
+      el.dataset.lat = lat;
+      el.dataset.lng = lng;
+      el.classList.add('con-dato');
+    } else {
+      el.textContent = '';
+      delete el.dataset.lat;
+      delete el.dataset.lng;
+      el.classList.remove('con-dato');
+    }
   }
 
   async function guardarFormulario(e) {
@@ -264,11 +318,251 @@
 
     try {
       const nuevoId = await KlenoDB.guardarSalon(data);
+      const salonId = id ? Number(id) : nuevoId;
+      // Foto: guardar nueva, quitar, o mantener
+      if (fotoActualBlob) {
+        await KlenoDB.guardarFoto(salonId, fotoActualBlob);
+      } else if (fotoMarcadaParaQuitar) {
+        await KlenoDB.eliminarFoto(salonId);
+      }
       toast(id ? 'Guardado' : '¡Salón cargado!');
       await recargarLista();
-      abrirDetalle(id ? Number(id) : nuevoId);
+      abrirDetalle(salonId);
     } catch (err) {
       toast('Error al guardar: ' + err.message);
+    }
+  }
+
+  // ---------- Foto ----------
+  function mostrarFotoPreview(blob) {
+    const wrap = $('#foto-preview-wrap');
+    const img = $('#foto-preview');
+    if (!blob) {
+      wrap.classList.add('hidden');
+      img.src = '';
+      return;
+    }
+    if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
+    const url = URL.createObjectURL(blob);
+    img.src = url;
+    img.dataset.url = url;
+    wrap.classList.remove('hidden');
+  }
+
+  async function onFotoElegida(file) {
+    if (!file) return;
+    try {
+      const blob = await comprimirImagen(file, 1280, 0.82);
+      fotoActualBlob = blob;
+      fotoMarcadaParaQuitar = false;
+      mostrarFotoPreview(blob);
+      toast('Foto lista');
+    } catch (err) {
+      toast('No se pudo procesar la imagen');
+    }
+  }
+
+  function quitarFoto() {
+    fotoActualBlob = null;
+    fotoMarcadaParaQuitar = true;
+    mostrarFotoPreview(null);
+  }
+
+  // Redimensiona/comprime usando Canvas (mantiene proporción)
+  function comprimirImagen(file, maxLado, calidad) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const ratio = Math.min(maxLado / Math.max(width, height), 1);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob falló')),
+                      'image/jpeg', calidad);
+      };
+      img.onerror = reject;
+      const reader = new FileReader();
+      reader.onload = () => { img.src = reader.result; };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ---------- Autocomplete dirección (Nominatim / OpenStreetMap) ----------
+  // Buenos Aires + CABA viewbox aprox.
+  const VIEWBOX_BA = '-60.9,-32.5,-56.7,-40.0';
+
+  async function buscarDirecciones(query) {
+    const q = query.trim();
+    if (q.length < 3) return [];
+    const url = 'https://nominatim.openstreetmap.org/search?format=json'
+              + '&addressdetails=1&limit=6'
+              + '&countrycodes=ar'
+              + '&viewbox=' + VIEWBOX_BA
+              + '&bounded=1'
+              + '&q=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    if (!r.ok) throw new Error('Error de red');
+    return r.json();
+  }
+
+  function renderSugerencias(resultados) {
+    const cont = $('#dir-sugerencias');
+    cont.innerHTML = '';
+    if (!resultados.length) {
+      cont.innerHTML = '<div class="dir-sugerencias-info">Sin resultados — probá usar GPS o Google Maps.</div>';
+      cont.classList.remove('hidden');
+      return;
+    }
+    resultados.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'dir-sugerencia';
+      const a = r.address || {};
+      const calle = [a.road, a.house_number].filter(Boolean).join(' ') || r.display_name.split(',')[0];
+      const resto = [a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state]
+                    .filter(Boolean).join(', ');
+      div.innerHTML = `
+        <div class="calle">${escapeHtml(calle)}</div>
+        <div class="resto">${escapeHtml(resto || '')}</div>
+      `;
+      div.onclick = () => seleccionarSugerencia(r);
+      cont.appendChild(div);
+    });
+    cont.classList.remove('hidden');
+  }
+
+  function seleccionarSugerencia(r) {
+    const a = r.address || {};
+    const partes = [
+      [a.road, a.house_number].filter(Boolean).join(' '),
+      a.suburb || a.neighbourhood,
+      a.city || a.town || a.village
+    ].filter(Boolean);
+    $('#f-direccion').value = partes.join(', ') || r.display_name;
+    actualizarGeoInfo(parseFloat(r.lat), parseFloat(r.lon));
+    cerrarSugerencias();
+    toast('Ubicación cargada desde el mapa');
+  }
+
+  function cerrarSugerencias() {
+    $('#dir-sugerencias').classList.add('hidden');
+    $('#dir-sugerencias').innerHTML = '';
+  }
+
+  function onDireccionInput(e) {
+    clearTimeout(dirTimer);
+    const q = e.target.value;
+    if (q.length < 3) { cerrarSugerencias(); return; }
+    dirTimer = setTimeout(async () => {
+      try {
+        const resultados = await buscarDirecciones(q);
+        // Si el usuario siguió escribiendo, no muestres resultados viejos
+        if ($('#f-direccion').value !== q) return;
+        renderSugerencias(resultados);
+      } catch {
+        // silencio: si no hay red, no rompe nada
+      }
+    }, 450);
+  }
+
+  // ---------- Google Maps: buscar + pegar link ----------
+  function buscarEnGoogleMaps() {
+    const nombre = $('#f-nombre').value.trim();
+    const dir = $('#f-direccion').value.trim();
+    const q = [nombre, dir, 'Buenos Aires'].filter(Boolean).join(', ');
+    if (!q) { toast('Escribí primero el nombre del salón.'); return; }
+    const url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+    window.open(url, '_blank', 'noopener');
+    toast('Buscá el salón en Google Maps, tocá "Compartir → Copiar enlace" y volvé.');
+  }
+
+  async function pegarLinkGoogleMaps() {
+    let texto = '';
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        texto = await navigator.clipboard.readText();
+      }
+    } catch { /* permiso denegado */ }
+    if (!texto) {
+      texto = prompt('Pegá acá el link de Google Maps que copiaste:') || '';
+    }
+    texto = texto.trim();
+    if (!texto) return;
+    const datos = parsearLinkGoogleMaps(texto);
+    if (!datos) {
+      toast('No reconocí el link. Intentá copiar desde Google Maps → Compartir → Copiar enlace.');
+      return;
+    }
+    if (datos.lat != null) actualizarGeoInfo(datos.lat, datos.lng);
+    if (datos.nombre && !$('#f-nombre').value.trim()) {
+      $('#f-nombre').value = datos.nombre;
+    }
+    if (datos.direccion && !$('#f-direccion').value.trim()) {
+      $('#f-direccion').value = datos.direccion;
+    }
+    // Si vino link corto sin coords, sigamos pidiendo al usuario
+    if (datos.necesitaAbrir) {
+      toast('Es un link corto — abriendo Google Maps para resolverlo.');
+      window.open(texto, '_blank', 'noopener');
+    } else {
+      toast('Datos importados de Google Maps');
+    }
+  }
+
+  function parsearLinkGoogleMaps(url) {
+    try {
+      const u = new URL(url);
+      const host = u.hostname.replace('www.', '');
+      if (!/google\.[a-z.]+|goo\.gl|maps\.app\.goo\.gl/.test(host)) return null;
+
+      // Link corto -> no podemos extraer coords sin seguirlo (CORS bloquea el fetch).
+      if (host === 'maps.app.goo.gl' || host === 'goo.gl') {
+        return { necesitaAbrir: true };
+      }
+
+      // Patrón largo típico:
+      //   /maps/place/Nombre+del+local/@-34.563,-58.45,17z/data=...
+      const pathParts = u.pathname.split('/').filter(Boolean);
+      let nombre = null, direccion = null, lat = null, lng = null;
+
+      const placeIdx = pathParts.indexOf('place');
+      if (placeIdx >= 0 && pathParts[placeIdx + 1]) {
+        nombre = decodeURIComponent(pathParts[placeIdx + 1].replace(/\+/g, ' '));
+      }
+
+      // Coords pueden estar en @lat,lng,zoom o en !3dlat!4dlng en data=
+      const atMatch = u.pathname.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+      if (atMatch) {
+        lat = parseFloat(atMatch[1]);
+        lng = parseFloat(atMatch[2]);
+      }
+      const dataMatch = u.href.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+      if (dataMatch) {
+        lat = parseFloat(dataMatch[1]);
+        lng = parseFloat(dataMatch[2]);
+      }
+
+      // ?q=lat,lng o ?query=lat,lng (formato api=1)
+      const q = u.searchParams.get('q') || u.searchParams.get('query');
+      if (q) {
+        const m = q.match(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+        if (m && lat == null) {
+          lat = parseFloat(m[1]);
+          lng = parseFloat(m[2]);
+        } else if (!nombre && !m) {
+          nombre = q;
+        }
+      }
+
+      if (lat == null && !nombre) return null;
+      return { nombre, direccion, lat, lng };
+    } catch {
+      return null;
     }
   }
 
@@ -289,12 +583,12 @@
       return;
     }
     $('#geo-info').textContent = 'Obteniendo ubicación...';
+    $('#geo-info').classList.remove('con-dato');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        $('#geo-info').textContent = `📍 ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-        $('#geo-info').dataset.lat = latitude;
-        $('#geo-info').dataset.lng = longitude;
+        actualizarGeoInfo(latitude, longitude);
+        toast('Ubicación GPS capturada');
       },
       (err) => {
         $('#geo-info').textContent = 'No se pudo obtener la ubicación.';
@@ -625,6 +919,23 @@
     });
 
     $('#btn-geo').onclick = capturarGeo;
+    $('#btn-buscar-gmaps').onclick = buscarEnGoogleMaps;
+    $('#btn-pegar-gmaps').onclick = pegarLinkGoogleMaps;
+
+    // Foto
+    $('#btn-foto-camara').onclick = () => $('#input-foto-camara').click();
+    $('#btn-foto-galeria').onclick = () => $('#input-foto-galeria').click();
+    $('#input-foto-camara').onchange = (e) => { onFotoElegida(e.target.files[0]); e.target.value = ''; };
+    $('#input-foto-galeria').onchange = (e) => { onFotoElegida(e.target.files[0]); e.target.value = ''; };
+    $('#btn-quitar-foto').onclick = quitarFoto;
+
+    // Autocomplete dirección
+    $('#f-direccion').addEventListener('input', onDireccionInput);
+    $('#f-direccion').addEventListener('blur', () => {
+      // pequeño delay para permitir click en sugerencia
+      setTimeout(cerrarSugerencias, 200);
+    });
+
     $('#form-salon').onsubmit = guardarFormulario;
 
     // cerrar menú al tocar fuera
