@@ -82,8 +82,7 @@
     $('#app').classList.remove('hidden');
     $('#menu-usuario-actual').textContent = usuario;
     await recargarLista();
-    // Reset de pila y estado inicial de history
-    pilaVistas = ['lista'];
+    // Estado inicial de history
     history.replaceState({ vista: 'lista' }, '');
     mostrarVista('lista', { sinHistory: true });
     // Escuchar el botón atrás del celular
@@ -903,9 +902,13 @@
   }
 
   // ---------- Vistas / navegación ----------
-  // Pila lógica de vistas para manejar el botón "atrás" del celular.
-  let pilaVistas = ['lista'];
-  let navegacionInterna = false; // flag para no re-pushear al hacer popstate
+  // Vista actual y "anclas" de history para que el botón atrás funcione bien.
+  // Política simple:
+  //  - Desde cualquier vista (detalle/form/mapa/acerca) -> back vuelve a LISTA.
+  //  - Desde lista -> primer back avisa "Tocá de nuevo para salir", segundo cierra.
+  //  - Lightbox/menú/sugerencias = overlays: back primero los cierra.
+  let vistaActual = 'lista';
+  let avisoSalirTs = 0; // timestamp del último aviso para doble tap
 
   function mostrarVista(nombre, opciones = {}) {
     $('#menu').classList.add('hidden');
@@ -914,43 +917,50 @@
     });
     window.scrollTo(0, 0);
     if (nombre === 'mapa') renderMapa();
+    vistaActual = nombre;
 
-    // Sincronizar con history (para que botón atrás vuelva en vez de cerrar)
-    if (!opciones.sinHistory) {
-      const ultima = pilaVistas[pilaVistas.length - 1];
-      if (ultima !== nombre) {
-        pilaVistas.push(nombre);
-        history.pushState({ vista: nombre, profundidad: pilaVistas.length }, '');
-      }
+    if (opciones.sinHistory) return;
+    // Cuando salimos de la lista hacia otra vista, agregamos un state extra
+    // (el back va a consumirlo y nos devuelve a la lista).
+    if (nombre !== 'lista') {
+      history.pushState({ vista: nombre }, '');
     }
   }
 
   function manejarBack() {
-    // Si hay lightbox abierto -> cerrarlo primero
+    // 1) Overlays primero (no afectan navegación principal)
     const lb = document.querySelector('.lightbox');
-    if (lb) { lb.remove(); history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, ''); return; }
-    // Si hay menú abierto -> cerrarlo
+    if (lb) { lb.remove(); history.pushState({ vista: vistaActual }, ''); return; }
     if (!$('#menu').classList.contains('hidden')) {
       $('#menu').classList.add('hidden');
-      history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, '');
+      history.pushState({ vista: vistaActual }, '');
       return;
     }
-    // Sugerencias de dirección abiertas -> cerrarlas
     if (!$('#dir-sugerencias').classList.contains('hidden')) {
       cerrarSugerencias();
-      history.pushState({ vista: pilaVistas[pilaVistas.length-1] }, '');
+      history.pushState({ vista: vistaActual }, '');
       return;
     }
-    // Si estamos en una vista que no es lista -> volver a lista
-    if (pilaVistas.length > 1) {
-      pilaVistas.pop();
-      const anterior = pilaVistas[pilaVistas.length - 1] || 'lista';
-      mostrarVista(anterior, { sinHistory: true });
-    } else {
-      // Estamos en lista — dejar que el celular minimize la PWA (el browser
-      // gestionará el back nativamente, agregando un dummy state).
-      history.pushState({ vista: 'lista' }, '');
+
+    // 2) Estamos en alguna vista que NO es lista -> ir a lista (sin importar
+    // de dónde venga). Esto es lo que pidió el usuario: el back te lleva a
+    // inicio, no a la pantalla previa.
+    if (vistaActual !== 'lista') {
+      mostrarVista('lista', { sinHistory: true });
+      return;
     }
+
+    // 3) Estamos en lista -> doble tap para salir.
+    const ahora = Date.now();
+    if (avisoSalirTs && (ahora - avisoSalirTs) < 2000) {
+      // Salir: dejar pasar el back (no re-push). Android cierra/minimiza la PWA.
+      avisoSalirTs = 0;
+      return;
+    }
+    avisoSalirTs = ahora;
+    toast('Tocá atrás de nuevo para salir');
+    // Re-anclar el history para que el próximo back se reciba acá
+    history.pushState({ vista: 'lista' }, '');
   }
 
   // ---------- Menú ----------
@@ -985,6 +995,13 @@
   // ---------- Bindings globales ----------
   function bindGlobal() {
     $('#btn-menu').onclick = abrirMenu;
+
+    // Click en el logo del topbar -> volver a la lista (pantalla de inicio)
+    document.querySelector('.topbar-left').onclick = () => {
+      if (vistaActual === 'lista') return;
+      mostrarVista('lista');
+      history.replaceState({ vista: 'lista' }, '');
+    };
     $$('#menu button[data-action]').forEach(b => {
       b.onclick = () => accionMenu(b.dataset.action);
     });

@@ -124,7 +124,8 @@ html, body {
   border-bottom: 3px solid var(--kleno);
   box-shadow: 0 2px 8px rgba(0,0,0,.2);
 }
-.topbar-left { display: flex; align-items: center; gap: .7rem; }
+.topbar-left { display: flex; align-items: center; gap: .7rem; cursor: pointer; user-select: none; }
+.topbar-left:active { opacity: .7; }
 .topbar-logo { height: 26px; width: auto; display: block; }
 .marca-sub { font-size: .7rem; letter-spacing: 4px; color: var(--kleno); font-weight: 600; padding-bottom: 2px; }
 .icon-btn {
