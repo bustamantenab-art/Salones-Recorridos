@@ -163,14 +163,15 @@
     if (!json || json.app !== 'kleno-salones-recorridos' || !Array.isArray(json.salones)) {
       throw new Error('El archivo no es un backup válido de Salones Recorridos.');
     }
-    const store = await tx('salones', 'readwrite');
-    const fotosStore = await tx('fotos', 'readwrite');
+    // Las transacciones de IndexedDB se cierran sole en el primer await que sale
+    // del tick — por eso abrimos una nueva por cada operación.
     if (modo === 'replace') {
-      await reqToPromise(store.clear());
-      await reqToPromise(fotosStore.clear());
+      await reqToPromise((await tx('salones', 'readwrite')).clear());
+      await reqToPromise((await tx('fotos', 'readwrite')).clear());
     }
     const existentes = modo === 'merge'
-      ? new Set((await reqToPromise(store.getAll())).map(s => `${s.nombre}|${s.creadoEn}`))
+      ? new Set((await reqToPromise((await tx('salones', 'readonly')).getAll()))
+          .map(s => `${s.nombre}|${s.creadoEn}`))
       : new Set();
 
     // Mapear viejo id (del backup) -> nuevo id (recién creado), para reasignar fotos
@@ -181,6 +182,7 @@
       const copia = { ...s };
       const viejoId = copia.id;
       delete copia.id;
+      const store = await tx('salones', 'readwrite');
       const nuevoId = await reqToPromise(store.add(copia));
       if (viejoId != null) mapaIds[viejoId] = nuevoId;
     }
@@ -192,6 +194,7 @@
         if (nuevoId == null) continue;
         try {
           const blob = dataURLtoBlob(f.dataUrl);
+          const fotosStore = await tx('fotos', 'readwrite');
           await reqToPromise(fotosStore.put({ salonId: Number(nuevoId), blob, ts: f.ts || Date.now() }));
         } catch (e) {
           console.warn('Foto no se pudo restaurar para salón', nuevoId, e);

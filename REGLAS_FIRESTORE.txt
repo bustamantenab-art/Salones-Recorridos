@@ -1,0 +1,55 @@
+REGLAS DE SEGURIDAD FIRESTORE — Pegar en la consola
+====================================================
+
+Cuando funcione todo, cerrá el "modo de prueba" y pegá estas reglas
+para que cada vendedora vea SOLO lo suyo y el admin vea todo.
+
+PASOS:
+1. Firebase Console -> Firestore Database -> pestaña "Reglas".
+2. Borrá lo que esté ahí.
+3. Pegá EXACTAMENTE el siguiente bloque (cambiá los emails admin
+   si agregás más de uno).
+4. Click "Publicar".
+
+----- INICIO REGLAS -----
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function esAdmin() {
+      return request.auth != null &&
+             request.auth.token.email in [
+               'bustamante.nab@gmail.com'
+             ];
+    }
+
+    function esDueno(rsrc) {
+      return request.auth != null &&
+             rsrc.data.cargadoPorUid == request.auth.uid;
+    }
+
+    match /salones/{salonId} {
+      allow read: if request.auth != null && (esAdmin() || esDueno(resource));
+      allow create: if request.auth != null &&
+                    request.resource.data.cargadoPorUid == request.auth.uid;
+      allow update, delete: if request.auth != null &&
+                            (esAdmin() || esDueno(resource));
+    }
+
+    match /fotos/{salonId} {
+      // Una foto se puede leer/escribir si el usuario puede leer el salon.
+      allow read, write: if request.auth != null &&
+        (esAdmin() ||
+         get(/databases/$(database)/documents/salones/$(salonId)).data.cargadoPorUid == request.auth.uid);
+    }
+  }
+}
+
+----- FIN REGLAS -----
+
+NOTA: con estas reglas, las vendedoras pueden:
+  - Ver, crear, editar y borrar solo SUS propios salones y fotos.
+  - No pueden ver salones cargados por otras.
+
+El admin (vos) puede ver, editar y borrar TODO.

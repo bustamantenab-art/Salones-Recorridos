@@ -19,20 +19,50 @@
   let dirTimer = null;          // debounce autocomplete
 
   // ---------- Inicio ----------
+  // DOMContentLoaded espera a que termine de ejecutar el módulo firebase-init.js
+  // (por spec, los <script type="module"> son deferred y bloquean el evento).
+  // Entonces KlenoAuth y KlenoDB ya existen cuando entramos a init().
   document.addEventListener('DOMContentLoaded', init);
 
   async function init() {
     aplicarTemaGuardado();
     registrarSW();
-
-    usuario = await KlenoDB.getUsuarioActual();
-    if (!usuario) {
-      await renderOnboarding();
-    } else {
-      await iniciarApp();
-    }
-
     bindGlobal();
+
+    // Re-render automático cuando Firestore avisa de cambios (otro dispositivo
+    // cargó/editó/borró un salón).
+    KlenoAuth.onCambio(async (salones) => {
+      cache = salones;
+      await refrescarThumbsParaCache();
+      if (vistaActual === 'lista') renderLista();
+      if (vistaActual === 'mapa')  renderMapa();
+    });
+
+    // Reaccionar a cambios de sesión (logout desde menú, expiración, etc.)
+    window.addEventListener('kleno-auth-changed', async (e) => {
+      const user = e.detail.user;
+      if (user) {
+        usuario = user.email;
+        $('#onboarding').classList.add('hidden');
+        $('#splash').classList.add('hidden');
+        await iniciarApp();
+      } else {
+        usuario = null;
+        $('#app').classList.add('hidden');
+        $('#splash').classList.add('hidden');
+        renderLogin();
+      }
+    });
+
+    // Esperar a que Firebase confirme si hay sesión guardada o no.
+    const user = await KlenoAuth.ready;
+    $('#splash').classList.add('hidden');
+    if (user) {
+      usuario = user.email;
+      await iniciarApp();
+    } else {
+      renderLogin();
+    }
   }
 
   function registrarSW() {
@@ -46,35 +76,40 @@
     document.body.classList.toggle('dark', dark);
   }
 
-  // ---------- Onboarding ----------
-  async function renderOnboarding() {
+  // ---------- Login ----------
+  function renderLogin() {
     $('#onboarding').classList.remove('hidden');
     $('#app').classList.add('hidden');
+    $('#login-error').classList.add('hidden');
 
-    const recientes = await KlenoDB.getUsuariosRecientes();
-    const cont = $('#usuarios-recientes');
-    cont.innerHTML = '';
-    recientes.forEach(u => {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'chip-usuario';
-      chip.textContent = u;
-      chip.onclick = () => seleccionarUsuario(u);
-      cont.appendChild(chip);
-    });
-
-    $('#form-usuario').onsubmit = (e) => {
+    $('#form-login').onsubmit = async (e) => {
       e.preventDefault();
-      const valor = $('#input-usuario').value.trim();
-      if (valor) seleccionarUsuario(valor);
+      const email = $('#input-email').value.trim();
+      const pass  = $('#input-password').value;
+      const btn   = e.target.querySelector('button[type=submit]');
+      btn.disabled = true; btn.textContent = 'Entrando...';
+      $('#login-error').classList.add('hidden');
+      try {
+        await KlenoAuth.signIn(email, pass);
+        // El listener kleno-auth-changed levanta la app cuando llegue el user.
+      } catch (err) {
+        $('#login-error').textContent = traducirErrorAuth(err);
+        $('#login-error').classList.remove('hidden');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Entrar';
+      }
     };
   }
 
-  async function seleccionarUsuario(u) {
-    await KlenoDB.setUsuarioActual(u);
-    usuario = u;
-    $('#onboarding').classList.add('hidden');
-    await iniciarApp();
+  function traducirErrorAuth(err) {
+    const c = (err && err.code) || '';
+    if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found')) {
+      return 'Email o contraseña incorrectos.';
+    }
+    if (c.includes('invalid-email'))      return 'El email no es válido.';
+    if (c.includes('too-many-requests'))  return 'Demasiados intentos. Probá en un rato.';
+    if (c.includes('network'))            return 'Sin conexión. Revisá tus datos / WiFi.';
+    return 'No se pudo entrar: ' + (err.message || c || 'error desconocido');
   }
 
   // ---------- App principal ----------
@@ -91,16 +126,28 @@
   }
 
   async function recargarLista() {
-    // liberar object URLs viejos
-    Object.values(cacheThumbs).forEach(URL.revokeObjectURL);
-    cacheThumbs = {};
     cache = await KlenoDB.listarSalones();
-    // precargar thumbs de fotos
+    await refrescarThumbsParaCache();
+    renderLista();
+  }
+
+  // Refresca el cache de thumbs para los salones actualmente en cache.
+  // Conserva los que ya tenía cargados (no vuelve a descargar de Firestore).
+  async function refrescarThumbsParaCache() {
+    const idsActuales = new Set(cache.map(s => String(s.id)));
+    // Borrar thumbs de salones que ya no están en cache
+    for (const id of Object.keys(cacheThumbs)) {
+      if (!idsActuales.has(id)) {
+        URL.revokeObjectURL(cacheThumbs[id]);
+        delete cacheThumbs[id];
+      }
+    }
+    // Cargar thumbs nuevos
     for (const s of cache) {
+      if (cacheThumbs[s.id]) continue;
       const blob = await KlenoDB.obtenerFoto(s.id);
       if (blob) cacheThumbs[s.id] = URL.createObjectURL(blob);
     }
-    renderLista();
   }
 
   function renderLista() {
@@ -334,11 +381,11 @@
       cargadoPor: usuario
     };
     const id = $('#f-id').value;
-    if (id) data.id = Number(id);
+    if (id) data.id = id;
 
     try {
       const nuevoId = await KlenoDB.guardarSalon(data);
-      const salonId = id ? Number(id) : nuevoId;
+      const salonId = id || nuevoId;
       // Foto: guardar nueva, quitar, o mantener
       if (fotoActualBlob) {
         await KlenoDB.guardarFoto(salonId, fotoActualBlob);
@@ -701,7 +748,7 @@
       const link = e.popup.getElement().querySelector('[data-salon-id]');
       if (link) link.onclick = (ev) => {
         ev.preventDefault();
-        abrirDetalle(Number(link.dataset.salonId));
+        abrirDetalle(link.dataset.salonId);
       };
     });
 
@@ -975,11 +1022,10 @@
       case 'ver-lista': mostrarVista('lista'); break;
       case 'export-excel': exportarExcel(); break;
       case 'export-kml': exportarKML(); break;
-      case 'cambiar-usuario':
-        await KlenoDB.setUsuarioActual(null);
-        usuario = null;
-        $('#app').classList.add('hidden');
-        await renderOnboarding();
+      case 'cerrar-sesion':
+        if (!confirm('¿Cerrar sesión?')) break;
+        await KlenoAuth.signOut();
+        // El listener kleno-auth-changed muestra el login.
         break;
       case 'exportar': await exportar(); break;
       case 'importar': $('#input-import').click(); break;

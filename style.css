@@ -113,6 +113,19 @@ html, body {
 }
 .chip-usuario:hover { background: var(--kleno); color: #1a1d23; }
 
+.login-error {
+  margin-top: .75rem;
+  padding: .6rem .8rem;
+  background: rgba(192,57,43,.18);
+  color: #ffb3aa;
+  border: 1px solid rgba(192,57,43,.5);
+  border-radius: var(--radius-sm);
+  font-size: .9rem;
+  text-align: left;
+}
+#splash { display: flex; }
+#splash.hidden { display: none; }
+
 /* ============ Topbar ============ */
 .topbar {
   position: sticky; top: 0; z-index: 20;
