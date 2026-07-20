@@ -366,6 +366,13 @@
       return;
     }
 
+    // Deshabilitar el botón para evitar dobles clicks que dupliquen el alta.
+    const btnGuardar = $('#form-salon button[type=submit]');
+    if (btnGuardar.disabled) return;
+    btnGuardar.disabled = true;
+    const textoOriginal = btnGuardar.textContent;
+    btnGuardar.textContent = 'Guardando...';
+
     const geo = $('#geo-info').dataset;
     const data = {
       nombre: $('#f-nombre').value.trim(),
@@ -394,9 +401,14 @@
       }
       toast(id ? 'Guardado' : '¡Salón cargado!');
       await recargarLista();
-      abrirDetalle(salonId);
+      // Ir a la lista, no al detalle: así se ve el nuevo salón entre los demás
+      // y no se puede volver a apretar "Guardar" del form por accidente.
+      mostrarVista('lista');
     } catch (err) {
       toast('Error al guardar: ' + err.message);
+    } finally {
+      btnGuardar.disabled = false;
+      btnGuardar.textContent = textoOriginal;
     }
   }
 
