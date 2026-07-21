@@ -36,7 +36,12 @@ body.dark {
 
 * { box-sizing: border-box; }
 
-html, body {
+/* Overflow horizontal solo en <html> — si se lo ponemos también al <body>
+   Android/iOS rompen el scroll vertical con momentum (queda tironeando). */
+html {
+  overflow-x: hidden;
+}
+body {
   margin: 0;
   padding: 0;
   background: var(--bg);
@@ -47,8 +52,6 @@ html, body {
   min-height: 100vh;
   overscroll-behavior-y: contain;
   -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;
-  max-width: 100vw;
 }
 
 .hidden { display: none !important; }

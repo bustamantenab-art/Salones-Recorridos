@@ -20,7 +20,8 @@ service cloud.firestore {
     function esAdmin() {
       return request.auth != null &&
              request.auth.token.email in [
-               'bustamante.nab@gmail.com'
+               'bustamante.nab@gmail.com',
+               'klenodistribuidora@gmail.com'
              ];
     }
 
