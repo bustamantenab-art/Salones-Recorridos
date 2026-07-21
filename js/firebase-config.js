@@ -15,5 +15,6 @@ window.FIREBASE_CONFIG = {
 // Lista de emails con rol admin (ven TODOS los salones).
 // Cualquier otro email autenticado es "vendedora" (solo ve los suyos).
 window.KLENO_ADMINS = [
-  "bustamante.nab@gmail.com"
+  "bustamante.nab@gmail.com",
+  "klenodistribuidora@gmail.com"
 ];
