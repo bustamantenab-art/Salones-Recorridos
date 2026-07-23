@@ -52,6 +52,9 @@ body {
   min-height: 100vh;
   overscroll-behavior-y: contain;
   -webkit-text-size-adjust: 100%;
+  /* Solo permitimos gestos verticales de scroll; los dedos que arrastran
+     de costado se ignoran (evita que el celu resbale para los lados). */
+  touch-action: pan-y;
 }
 
 .hidden { display: none !important; }
@@ -242,7 +245,7 @@ body.dark .leaflet-container { background: #303841; }
 
 /* ============ Buscador ============ */
 .buscador {
-  display: flex; gap: .5rem;
+  display: flex; gap: .5rem; flex-wrap: wrap;
   margin-bottom: .75rem;
 }
 .buscador input, .buscador select {
@@ -252,8 +255,11 @@ body.dark .leaflet-container { background: #303841; }
   background: var(--surface);
   color: var(--text);
   font-size: .95rem;
+  min-width: 0;
+  max-width: 100%;
 }
-.buscador input { flex: 1; }
+.buscador input  { flex: 1 1 200px; }
+.buscador select { flex: 0 1 auto; }
 .buscador input:focus, .buscador select:focus {
   outline: none; border-color: var(--kleno);
 }

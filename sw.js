@@ -2,7 +2,7 @@
    sw.js — Service Worker para funcionamiento offline
    Estrategia: cache-first para los archivos de la app.
    ============================================================ */
-const CACHE = 'kleno-salones-v11';
+const CACHE = 'kleno-salones-v12';
 const ARCHIVOS = [
   './',
   './index.html',

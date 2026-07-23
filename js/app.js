@@ -430,14 +430,16 @@
 
   async function onFotoElegida(file) {
     if (!file) return;
+    toast('Procesando foto...');
     try {
-      const blob = await comprimirImagen(file, 1280, 0.82);
+      const blob = await comprimirImagen(file, 1024, 0.80);
       fotoActualBlob = blob;
       fotoMarcadaParaQuitar = false;
       mostrarFotoPreview(blob);
       toast('Foto lista');
     } catch (err) {
-      toast('No se pudo procesar la imagen');
+      console.error('Error procesando foto:', err);
+      toast('No se pudo procesar la imagen: ' + (err.message || 'muy grande'));
     }
   }
 
@@ -447,47 +449,82 @@
     mostrarFotoPreview(null);
   }
 
-  // Redimensiona/comprime usando Canvas (mantiene proporción)
+  // Redimensiona/comprime usando Canvas (mantiene proporción).
+  // Usa createObjectURL en vez de readAsDataURL: no genera un string base64
+  // gigante en memoria (una foto 12MP de Android puede ocupar 15MB en base64,
+  // suficiente para tirar la pestaña de Chrome).
   function comprimirImagen(file, maxLado, calidad) {
     return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        let { width, height } = img;
-        const ratio = Math.min(maxLado / Math.max(width, height), 1);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob falló')),
-                      'image/jpeg', calidad);
+        try {
+          let { width, height } = img;
+          const ratio = Math.min(maxLado / Math.max(width, height), 1);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(b => {
+            if (b) resolve(b);
+            else reject(new Error('El navegador no pudo generar la imagen'));
+          }, 'image/jpeg', calidad);
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          reject(e);
+        }
       };
-      img.onerror = reject;
-      const reader = new FileReader();
-      reader.onload = () => { img.src = reader.result; };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('No se pudo decodificar la imagen'));
+      };
+      img.src = url;
     });
   }
 
   // ---------- Autocomplete dirección (Nominatim / OpenStreetMap) ----------
-  // Buenos Aires + CABA viewbox aprox.
-  const VIEWBOX_BA = '-60.9,-32.5,-56.7,-40.0';
+  // Viewbox chico = CABA (Ciudad Autónoma de Buenos Aires).
+  // Viewbox grande = CABA + Gran Buenos Aires (partidos del conurbano).
+  // Formato Nominatim: lon_izq, lat_arriba, lon_der, lat_abajo.
+  const VIEWBOX_CABA = '-58.535,-34.526,-58.335,-34.706';
+  const VIEWBOX_AMBA = '-58.90,-34.30,-58.10,-34.90';
+
+  async function nominatimQuery(query, viewbox) {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json'
+              + '&addressdetails=1&limit=6'
+              + '&countrycodes=ar'
+              + '&viewbox=' + viewbox
+              + '&bounded=1'
+              + '&q=' + encodeURIComponent(query);
+    const r = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    if (!r.ok) throw new Error('Error de red');
+    return r.json();
+  }
 
   async function buscarDirecciones(query) {
     const q = query.trim();
     if (q.length < 3) return [];
-    const url = 'https://nominatim.openstreetmap.org/search?format=json'
-              + '&addressdetails=1&limit=6'
-              + '&countrycodes=ar'
-              + '&viewbox=' + VIEWBOX_BA
-              + '&bounded=1'
-              + '&q=' + encodeURIComponent(q);
-    const r = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-    if (!r.ok) throw new Error('Error de red');
-    return r.json();
+    // Buscar CABA y AMBA en paralelo, mostrar CABA primero, después AMBA.
+    // Deduplicamos por place_id.
+    const [caba, amba] = await Promise.all([
+      nominatimQuery(q, VIEWBOX_CABA).catch(() => []),
+      nominatimQuery(q, VIEWBOX_AMBA).catch(() => [])
+    ]);
+    const vistos = new Set();
+    const orden = [];
+    for (const arr of [caba, amba]) {
+      for (const r of arr) {
+        const k = r.place_id;
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        orden.push(r);
+      }
+    }
+    return orden.slice(0, 8);
   }
 
   function renderSugerencias(resultados) {
